@@ -270,7 +270,12 @@ class Order(LoggedModel):
         """
         positions = self.positions.all().select_related('item')
         cancelable = all([op.item.allow_cancel for op in positions])
-        return self.event.settings.cancel_allow_user and cancelable
+        if not cancelable:
+            return False
+        cancel_allow_free = self.event.settings.get('cancel_allow_free', as_type=bool)
+        if cancel_allow_free and self.total == 0:
+            return True
+        return self.status == Order.STATUS_PENDING
 
     @property
     def is_expired_by_time(self):

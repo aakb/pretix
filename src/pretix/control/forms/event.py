@@ -376,6 +376,11 @@ class EventSettingsForm(SettingsForm):
         help_text=_("If checked, users can cancel orders by themselves as long as they are not yet paid."),
         required=False
     )
+    cancel_allow_free = forms.BooleanField(
+        label=_("Allow users to cancel free orders"),
+        help_text=_("If checked, users can cancel free orders by themselves."),
+        required=False
+    )
 
     def clean(self):
         data = super().clean()

@@ -193,7 +193,7 @@ def _cancel_order(order, user=None, send_mail: bool=True):
     if isinstance(user, int):
         user = User.objects.get(pk=user)
     with order.event.lock():
-        if order.status != Order.STATUS_PENDING:
+        if not order.can_user_cancel:
             raise OrderError(_('You cannot cancel this order.'))
         order.status = Order.STATUS_CANCELED
         order.save()
