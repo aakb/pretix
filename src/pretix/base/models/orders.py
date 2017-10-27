@@ -268,13 +268,16 @@ class Order(LoggedModel):
         """
         Returns whether or not this order can be canceled by the user.
         """
+        # Check if all items on order are cancelable.
         positions = self.positions.all().select_related('item')
         cancelable = all([op.item.allow_cancel for op in positions])
         if not cancelable:
             return False
+        # Check free order.
         cancel_allow_free = self.event.settings.get('cancel_allow_free', as_type=bool)
         if cancel_allow_free and self.total == 0:
             return True
+        # Otherwise, only pending orders can be cancelled.
         return self.status == Order.STATUS_PENDING
 
     @property
