@@ -37,7 +37,8 @@ from pretix.base.services.invoices import (
 from pretix.base.services.locking import LockTimeoutException
 from pretix.base.services.mail import SendMailException, render_mail
 from pretix.base.services.orders import (
-    OrderChangeManager, OrderError, cancel_order, mark_order_paid,
+    OrderChangeManager, OrderError, cancel_order, extend_order,
+    mark_order_paid,
 )
 from pretix.base.services.stats import order_overview
 from pretix.base.signals import register_data_exporters
@@ -453,32 +454,20 @@ class OrderExtend(OrderView):
 
     def post(self, *args, **kwargs):
         if self.form.is_valid():
-            if self.order.status == Order.STATUS_PENDING:
+            try:
+                extend_order(
+                    self.order,
+                    new_date=self.form.cleaned_data.get('expires'),
+                    force=self.form.cleaned_data.get('quota_ignore', False),
+                    user=self.request.user
+                )
                 messages.success(self.request, _('The payment term has been changed.'))
-                self.order.log_action('pretix.event.order.expirychanged', user=self.request.user, data={
-                    'expires': self.order.expires,
-                    'state_change': False
-                })
-                self.form.save()
-            else:
-                try:
-                    with self.order.event.lock() as now_dt:
-                        is_available = self.order._is_still_available(now_dt, count_waitinglist=False)
-                        if is_available is True or self.form.cleaned_data.get('quota_ignore', False) is True:
-                            self.form.save()
-                            self.order.status = Order.STATUS_PENDING
-                            self.order.save()
-                            self.order.log_action('pretix.event.order.expirychanged', user=self.request.user, data={
-                                'expires': self.order.expires,
-                                'state_change': True
-                            })
-                            messages.success(self.request, _('The payment term has been changed.'))
-                        else:
-                            messages.error(self.request, is_available)
-                            return self._redirect_here()
-                except LockTimeoutException:
-                    messages.error(self.request, _('We were not able to process the request completely as the '
-                                                   'server was too busy.'))
+            except OrderError as e:
+                messages.error(self.request, str(e))
+                return self._redirect_here()
+            except LockTimeoutException:
+                messages.error(self.request, _('We were not able to process the request completely as the '
+                                               'server was too busy.'))
             return self._redirect_back()
         else:
             return self.get(*args, **kwargs)
@@ -604,6 +593,8 @@ class OrderChange(OrderView):
                     ocm.change_subevent(p, p.form.cleaned_data['subevent'])
                 elif p.form.cleaned_data['operation'] == 'cancel':
                     ocm.cancel(p)
+                elif p.form.cleaned_data['operation'] == 'split':
+                    ocm.split(p)
 
             except OrderError as e:
                 p.custom_error = str(e)
@@ -611,7 +602,12 @@ class OrderChange(OrderView):
         return True
 
     def post(self, *args, **kwargs):
-        ocm = OrderChangeManager(self.order, self.request.user)
+        notify = self.other_form.cleaned_data['notify'] if self.other_form.is_valid() else True
+        ocm = OrderChangeManager(
+            self.order,
+            user=self.request.user,
+            notify=notify
+        )
         form_valid = self._process_add(ocm) and self._process_change(ocm) and self._process_other(ocm)
 
         if not form_valid:
@@ -622,7 +618,10 @@ class OrderChange(OrderView):
             except OrderError as e:
                 messages.error(self.request, str(e))
             else:
-                messages.success(self.request, _('The order has been changed and the user has been notified.'))
+                if notify:
+                    messages.success(self.request, _('The order has been changed and the user has been notified.'))
+                else:
+                    messages.success(self.request, _('The order has been changed.'))
                 return self._redirect_back()
 
         return self.get(*args, **kwargs)
