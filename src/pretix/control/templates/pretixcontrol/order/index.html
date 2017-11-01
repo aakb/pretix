@@ -29,11 +29,12 @@
                             {% trans "Extend payment term" %}
                         </a>
                     {% endif %}
-                    {% if order.status == 'n' %}
+                    {% if order.can_user_cancel %}
                         <a href="{% url "control:event.order.transition" event=request.event.slug organizer=request.event.organizer.slug code=order.code %}?status=c" class="btn btn-default">
                             {% trans "Cancel order" %}
                         </a>
-                    {% elif order.status == 'p' %}
+                    {% endif %}
+                    {% if order.status == 'p' %}
                         <button name="status" value="n" class="btn btn-default">{% trans "Mark as not paid" %}</button>
                         <a href="{% url "control:event.order.transition" event=request.event.slug organizer=request.event.organizer.slug code=order.code %}?status=r" class="btn btn-default">
                             {% trans "Refund order" %}
