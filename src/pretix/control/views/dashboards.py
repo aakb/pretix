@@ -72,6 +72,7 @@ def base_widgets(sender, subevent=None, **kwargs):
         {
             'content': NUM_WIDGET.format(num=tickc, text=_('Attendees (ordered)')),
             'display_size': 'small',
+            'permission': 'can_view_orders',
             'priority': 100,
             'url': reverse('control:event.orders', kwargs={
                 'event': sender.slug,
@@ -81,6 +82,7 @@ def base_widgets(sender, subevent=None, **kwargs):
         {
             'content': NUM_WIDGET.format(num=paidc, text=_('Attendees (paid)')),
             'display_size': 'small',
+            'permission': 'can_view_orders',
             'priority': 100,
             'url': reverse('control:event.orders.overview', kwargs={
                 'event': sender.slug,
@@ -91,6 +93,7 @@ def base_widgets(sender, subevent=None, **kwargs):
             'content': NUM_WIDGET.format(
                 num=formats.localize(rev), text=_('Total revenue ({currency})').format(currency=sender.currency)),
             'display_size': 'small',
+            'permission': 'can_view_orders',
             'priority': 100,
             'url': reverse('control:event.orders.overview', kwargs={
                 'event': sender.slug,
@@ -246,6 +249,9 @@ def event_index(request, organizer, event):
 
     widgets = []
     for r, result in event_dashboard_widgets.send(sender=request.event, subevent=subevent):
+        for item in result:
+            if 'permission' in item and not request.user.has_event_permission(request.organizer, request.event, item['permission'], request=request):
+                item['url'] = item['link'] = None
         widgets.extend(result)
 
     can_change_orders = request.user.has_event_permission(request.organizer, request.event, 'can_change_orders',
