@@ -52,16 +52,20 @@
                 {% if request.GET.search or request.GET.tag or request.GET.status or request.GET.subevent %}
                     {% trans "Your search did not match any vouchers." %}
                 {% else %}
-                    {% blocktrans trimmed %}
-                        You haven't created any vouchers yet.
-                    {% endblocktrans %}
+                    {% if 'can_change_vouchers' in request.eventpermset %}
+                        {% blocktrans trimmed %}
+                            You haven't created any vouchers yet.
+                        {% endblocktrans %}
+                    {% endif %}
                 {% endif %}
             </p>
 
-            <a href="{% url "control:event.vouchers.add" organizer=request.event.organizer.slug event=request.event.slug %}"
-                    class="btn btn-primary btn-lg"><i class="fa fa-plus"></i> {% trans "Create a new voucher" %}</a>
-            <a href="{% url "control:event.vouchers.bulk" organizer=request.event.organizer.slug event=request.event.slug %}"
-                    class="btn btn-primary btn-lg"><i class="fa fa-plus"></i> {% trans "Create multiple new vouchers" %}</a>
+            {% if 'can_change_vouchers' in request.eventpermset %}
+                <a href="{% url "control:event.vouchers.add" organizer=request.event.organizer.slug event=request.event.slug %}"
+                        class="btn btn-primary btn-lg"><i class="fa fa-plus"></i> {% trans "Create a new voucher" %}</a>
+                <a href="{% url "control:event.vouchers.bulk" organizer=request.event.organizer.slug event=request.event.slug %}"
+                        class="btn btn-primary btn-lg"><i class="fa fa-plus"></i> {% trans "Create multiple new vouchers" %}</a>
+            {% endif %}
         </div>
     {% else %}
         <p>
