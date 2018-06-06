@@ -81,7 +81,7 @@ setup(
         'django-otp==0.3.*',
         'python-u2flib-server==4.*',
         'django-formtools==2.0',
-        'celery==4.1.*',
+        'celery>=4.1.1,<4.2.0',
         'kombu==4.2.*',
         'django-statici18n==1.3.*',
         'inlinestyler==0.2.*',
@@ -110,7 +110,8 @@ setup(
         'pyuca',
         'defusedcsv',
         'vat_moss==0.11.0',
-        'django-hijack==2.1.*'
+        'django-hijack==2.1.*',
+        'django-oauth-toolkit==1.1.*',
     ],
     extras_require={
         'dev': [

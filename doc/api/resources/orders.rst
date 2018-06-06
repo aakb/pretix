@@ -1,4 +1,7 @@
-.. spelling:: checkins
+.. spelling::
+
+   checkins
+   pdf
 
 
 .. _rest-orders:
@@ -103,7 +106,7 @@ last_modified                         datetime                   Last modificati
 .. versionchanged:: 1.16
 
    The attributes ``order.last_modified`` as well as the corresponding filters to the resource have been added.
-   An endpoint for order creation has been added.
+   An endpoint for order creation as well as ``…/mark_refunded/`` has been added.
 
 .. _order-position-resource:
 
@@ -143,6 +146,9 @@ answers                               list of objects            Answers to user
 ├ question_identifier                 string                     The question's ``identifier`` field
 ├ options                             list of integers           Internal IDs of selected option(s)s (only for choice types)
 └ option_identifiers                  list of strings            The ``identifier`` fields of the selected option(s)s
+pdf_data                              object                     Data object required for ticket PDF generation. By default,
+                                                                 this field is missing. It will be added only if you add the
+                                                                 ``pdf_data=true`` query parameter to your request.
 ===================================== ========================== =======================================================
 
 .. versionchanged:: 1.7
@@ -159,7 +165,7 @@ answers                               list of objects            Answers to user
 
 .. versionchanged:: 1.16
 
-  The attribute ``pseudonymization_id`` has been added.
+  The attributes ``pseudonymization_id`` and ``pdf_data`` have been added.
 
 
 Order endpoints
@@ -716,6 +722,44 @@ Order endpoints
    :param code: The ``code`` field of the order to modify
    :statuscode 200: no error
    :statuscode 400: The order cannot be marked as unpaid since the current order status does not allow it.
+   :statuscode 401: Authentication failure
+   :statuscode 403: The requested organizer/event does not exist **or** you have no permission to view this resource.
+   :statuscode 404: The requested order does not exist.
+
+.. http:post:: /api/v1/organizers/(organizer)/events/(event)/orders/(code)/mark_refunded/
+
+   Marks a paid order as refunded.
+
+   .. warning:: In the current implementation, this will **bypass** the payment provider, i.e. the money will **not** be
+                transferred back to the user automatically, the order will only be *marked* as refunded within pretix.
+
+   **Example request**:
+
+   .. sourcecode:: http
+
+      POST /api/v1/organizers/bigevents/events/sampleconf/orders/ABC12/mark_expired/ HTTP/1.1
+      Host: pretix.eu
+      Accept: application/json, text/javascript
+
+   **Example response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 200 OK
+      Vary: Accept
+      Content-Type: application/json
+
+      {
+        "code": "ABC12",
+        "status": "r",
+        ...
+      }
+
+   :param organizer: The ``slug`` field of the organizer to modify
+   :param event: The ``slug`` field of the event to modify
+   :param code: The ``code`` field of the order to modify
+   :statuscode 200: no error
+   :statuscode 400: The order cannot be marked as expired since the current order status does not allow it.
    :statuscode 401: Authentication failure
    :statuscode 403: The requested organizer/event does not exist **or** you have no permission to view this resource.
    :statuscode 404: The requested order does not exist.

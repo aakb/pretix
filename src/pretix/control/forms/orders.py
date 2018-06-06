@@ -36,7 +36,9 @@ class ExtendForm(I18nModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.instance.status == Order.STATUS_PENDING or self.instance._is_still_available(now(), count_waitinglist=False) is True:
+        if self.instance.status == Order.STATUS_PENDING or self.instance._is_still_available(now(),
+                                                                                             count_waitinglist=False)\
+                is True:
             del self.fields['quota_ignore']
 
     def clean(self):
@@ -47,8 +49,33 @@ class ExtendForm(I18nModelForm):
         return data
 
 
-class ExporterForm(forms.Form):
+class MarkPaidForm(forms.Form):
+    force = forms.BooleanField(
+        label=_('Overbook quota and ignore late payment'),
+        help_text=_('If you check this box, this operation will be performed even if it leads to an overbooked quota '
+                    'and you having sold more tickets than you planned! The operation will also be performed '
+                    'regardless of the settings for late payments.'),
+        required=False
+    )
 
+    def __init__(self, *args, **kwargs):
+        self.instance = kwargs.pop("instance")
+        super().__init__(*args, **kwargs)
+        quota_success = (
+            self.instance.status == Order.STATUS_PENDING or
+            self.instance._is_still_available(now(), count_waitinglist=False) is True
+        )
+        term_last = self.instance.payment_term_last
+        term_success = (
+            (not term_last or term_last >= now()) and
+            (self.instance.status == Order.STATUS_PENDING or self.instance.event.settings.get(
+                'payment_term_accept_late'))
+        )
+        if quota_success and term_success:
+            del self.fields['force']
+
+
+class ExporterForm(forms.Form):
     def clean(self):
         data = super().clean()
 
@@ -206,6 +233,7 @@ class OrderPositionChangeForm(forms.Form):
             ('subevent', 'Change event date'),
             ('cancel', 'Remove product'),
             ('split', 'Split into new order'),
+            ('secret', 'Regenerate secret'),
         )
     )
 

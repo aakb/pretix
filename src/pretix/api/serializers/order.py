@@ -2,6 +2,7 @@ import json
 from collections import Counter
 from decimal import Decimal
 
+from django.utils.timezone import now
 from django_countries.fields import Country
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
@@ -13,6 +14,7 @@ from pretix.base.models import (
     Question, QuestionAnswer, Quota,
 )
 from pretix.base.models.orders import OrderFee
+from pretix.base.pdf import get_variables
 from pretix.base.signals import register_ticket_outputs
 
 
@@ -118,17 +120,39 @@ class PositionDownloadsField(serializers.Field):
         return res
 
 
+class PdfDataSerializer(serializers.Field):
+    def to_representation(self, instance: OrderPosition):
+        res = {}
+
+        ev = instance.subevent or instance.order.event
+
+        pdfvars = get_variables(instance.order.event)
+        for k, f in pdfvars.items():
+            res[k] = f['evaluate'](instance, instance.order, ev)
+
+        for k, v in ev.meta_data.items():
+            res['meta:' + k] = v
+
+        return res
+
+
 class OrderPositionSerializer(I18nAwareModelSerializer):
     checkins = CheckinSerializer(many=True)
     answers = AnswerSerializer(many=True)
     downloads = PositionDownloadsField(source='*')
     order = serializers.SlugRelatedField(slug_field='code', read_only=True)
+    pdf_data = PdfDataSerializer(source='*')
 
     class Meta:
         model = OrderPosition
         fields = ('id', 'order', 'positionid', 'item', 'variation', 'price', 'attendee_name', 'attendee_email',
                   'voucher', 'tax_rate', 'tax_value', 'secret', 'addon_to', 'subevent', 'checkins', 'downloads',
-                  'answers', 'tax_rule', 'pseudonymization_id')
+                  'answers', 'tax_rule', 'pseudonymization_id', 'pdf_data')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'request' in self.context and not self.context['request'].query_params.get('pdf_data', 'false') == 'true':
+            self.fields.pop('pdf_data')
 
 
 class OrderFeeSerializer(I18nAwareModelSerializer):
@@ -148,6 +172,11 @@ class OrderSerializer(I18nAwareModelSerializer):
         fields = ('code', 'status', 'secret', 'email', 'locale', 'datetime', 'expires', 'payment_date',
                   'payment_provider', 'fees', 'total', 'comment', 'invoice_address', 'positions', 'downloads',
                   'checkin_attention', 'last_modified')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.context['request'].query_params.get('pdf_data', 'false') == 'true':
+            self.fields['positions'].child.fields.pop('pdf_data')
 
 
 class AnswerCreateSerializer(I18nAwareModelSerializer):
@@ -395,6 +424,8 @@ class OrderCreateSerializer(I18nAwareModelSerializer):
                 order.status = Order.STATUS_PAID
             elif order.payment_provider == "free" and order.total != Decimal('0.00'):
                 raise ValidationError('You cannot use the "free" payment provider for non-free orders.')
+            if validated_data.get('status') == Order.STATUS_PAID:
+                order.payment_date = now()
             order.save()
             if ia:
                 ia.order = order
