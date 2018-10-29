@@ -92,6 +92,10 @@ class PermissionMiddleware(MiddlewareMixin):
                 request.eventpermset = SuperuserPermissionSet()
             else:
                 request.eventpermset = request.user.get_event_permission_set(request.organizer, request.event)
+                # custom event/hack for billetaarhus.
+                from pretix.base.signals import auth_get_event_permission_set
+                auth_get_event_permission_set.send(sender=self.__class__, request=request)
+
         elif 'organizer' in url.kwargs:
             request.organizer = Organizer.objects.filter(
                 slug=url.kwargs['organizer'],
