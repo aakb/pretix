@@ -4,7 +4,7 @@ msgstr ""
 "Project-Id-Version: 1\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2018-06-06 14:14+0000\n"
-"PO-Revision-Date: 2018-06-04 16:00+0000\n"
+"PO-Revision-Date: 2018-11-16 09:19+0100\n"
 "Last-Translator: anonymous <noreply@weblate.org>\n"
 "Language-Team: Danish <https://translate.pretix.eu/projects/pretix/pretix/da/"
 ">\n"
@@ -618,7 +618,7 @@ msgstr "Oprindelig faktureringsdato"
 #: pretix/base/invoice.py:281
 msgctxt "invoice"
 msgid "Invoice date"
-msgstr "Fakturadatao"
+msgstr "Fakturadato"
 
 #: pretix/base/invoice.py:317
 #, python-brace-format
@@ -2398,7 +2398,7 @@ msgstr ""
 #: pretix/base/payment.py:232
 msgctxt "invoice"
 msgid "The payment for this invoice has already been received."
-msgstr ""
+msgstr "Betalingen for denne faktura er allerede modtaget."
 
 #: pretix/base/payment.py:525
 #, python-format
