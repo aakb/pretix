@@ -379,3 +379,8 @@ dictionaries as values that contain keys like in the following example::
 The evaluate member will be called with the order position, order and event as arguments. The event might
 also be a subevent, if applicable.
 """
+
+auth_get_event_permission_set = django.dispatch.Signal(providing_args=["request"])
+"""
+This signal allows you to add or remove event permissions by adding or removing values from ``request.eventpermset```.
+"""
