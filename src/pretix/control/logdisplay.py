@@ -82,6 +82,10 @@ def _display_order_changed(event: Event, logentry: LogEntry):
                 item=item,
                 price=money_filter(Decimal(data['price']), event.currency),
             )
+    elif logentry.action_type == 'pretix.event.order.changed.secret':
+        return text + ' ' + _('A new secret has been generated for position #{posid}.').format(
+            posid=data.get('positionid', '?'),
+        )
     elif logentry.action_type == 'pretix.event.order.changed.split':
         old_item = str(event.items.get(pk=data['old_item']))
         if data['old_variation']:
@@ -193,6 +197,8 @@ def pretixcontrol_logentry_display(sender: Event, logentry: LogEntry, **kwargs):
         'pretix.user.settings.notifications.enabled': _('Notifications have been enabled.'),
         'pretix.user.settings.notifications.disabled': _('Notifications have been disabled.'),
         'pretix.user.settings.notifications.changed': _('Your notification settings have been changed.'),
+        'pretix.user.oauth.authorized': _('The application "{application_name}" has been authorized to access your '
+                                          'account.'),
         'pretix.control.auth.user.forgot_password.mail_sent': _('Password reset mail sent.'),
         'pretix.control.auth.user.forgot_password.recovered': _('The password has been reset.'),
         'pretix.voucher.added': _('The voucher has been created.'),

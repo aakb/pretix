@@ -57,12 +57,24 @@
         font-size: inherit;
         margin: 0;
         line-height: inherit;
+        a {
+            font-weight: bold;
+        }
     }
     h5 {
         font-size: inherit;
         font-weight: inherit;
         margin: 0;
         line-height: inherit;
+    }
+    .price del {
+        color: $text-muted;
+    }
+    .price ins {
+        color: $brand-success;
+        font-size: 18px;
+        font-weight: bold;
+        text-decoration: none;
     }
 }
 

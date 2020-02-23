@@ -20,7 +20,8 @@ from pretix.base.models.orders import (
 )
 from pretix.base.payment import PaymentException
 from pretix.base.services.invoices import (
-    generate_cancellation, generate_invoice, invoice_pdf, invoice_qualified,
+    generate_cancellation, generate_invoice, invoice_pdf, invoice_pdf_task,
+    invoice_qualified,
 )
 from pretix.base.services.orders import cancel_order
 from pretix.base.services.tickets import (
@@ -129,7 +130,7 @@ class OrderDetails(EventViewMixin, OrderDetailMixin, CartMixin, TemplateView):
             }
         )
 
-        if self.order.status == Order.STATUS_PENDING:
+        if self.order.status == Order.STATUS_PENDING and self.payment_provider:
             ctx['payment'] = self.payment_provider.order_pending_render(self.request, self.order)
             ctx['can_retry'] = (
                 self.payment_provider.order_can_retry(self.order)
@@ -145,7 +146,7 @@ class OrderDetails(EventViewMixin, OrderDetailMixin, CartMixin, TemplateView):
                     break
 
         elif self.order.status == Order.STATUS_PAID:
-            ctx['payment'] = self.payment_provider.order_paid_render(self.request, self.order)
+            ctx['payment'] = self.payment_provider.order_paid_render(self.request, self.order) if self.payment_provider else ''
             ctx['can_retry'] = False
         return ctx
 
@@ -673,6 +674,10 @@ class InvoiceDownload(EventViewMixin, OrderDetailMixin, View):
                                         'now. Please try again in a few seconds.'))
             return redirect(self.get_order_url())
 
-        resp = FileResponse(invoice.file.file, content_type='application/pdf')
+        try:
+            resp = FileResponse(invoice.file.file, content_type='application/pdf')
+        except FileNotFoundError:
+            invoice_pdf_task.apply(args=(invoice.pk,))
+            return self.get(request, *args, **kwargs)
         resp['Content-Disposition'] = 'attachment; filename="{}.pdf"'.format(invoice.number)
         return resp

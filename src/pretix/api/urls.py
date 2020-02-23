@@ -4,7 +4,11 @@ from django.apps import apps
 from django.conf.urls import include, url
 from rest_framework import routers
 
-from .views import checkin, event, item, order, organizer, voucher, waitinglist
+from pretix.api.views import cart
+
+from .views import (
+    checkin, event, item, oauth, order, organizer, voucher, waitinglist,
+)
 
 router = routers.DefaultRouter()
 router.register(r'organizers', organizer.OrganizerViewSet)
@@ -26,6 +30,7 @@ event_router.register(r'invoices', order.InvoiceViewSet)
 event_router.register(r'taxrules', event.TaxRuleViewSet)
 event_router.register(r'waitinglistentries', waitinglist.WaitingListViewSet)
 event_router.register(r'checkinlists', checkin.CheckinListViewSet)
+event_router.register(r'cartpositions', cart.CartPositionViewSet)
 
 checkinlist_router = routers.DefaultRouter()
 checkinlist_router.register(r'positions', checkin.CheckinListPositionViewSet)
@@ -52,4 +57,7 @@ urlpatterns = [
         include(question_router.urls)),
     url(r'^organizers/(?P<organizer>[^/]+)/events/(?P<event>[^/]+)/checkinlists/(?P<list>[^/]+)/',
         include(checkinlist_router.urls)),
+    url(r"^oauth/authorize$", oauth.AuthorizationView.as_view(), name="authorize"),
+    url(r"^oauth/token$", oauth.TokenView.as_view(), name="token"),
+    url(r"^oauth/revoke_token$", oauth.RevokeTokenView.as_view(), name="revoke-token"),
 ]

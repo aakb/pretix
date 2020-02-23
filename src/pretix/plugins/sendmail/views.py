@@ -24,7 +24,7 @@ logger = logging.getLogger('pretix.plugins.sendmail')
 
 class SenderView(EventPermissionRequiredMixin, FormView):
     template_name = 'pretixplugins/sendmail/send_form.html'
-    permission = 'can_change_orders'
+    permission = 'can_view_orders'
     form_class = forms.MailForm
 
     def get_form_kwargs(self):
@@ -134,7 +134,7 @@ class SenderView(EventPermissionRequiredMixin, FormView):
 
 class EmailHistoryView(EventPermissionRequiredMixin, ListView):
     template_name = 'pretixplugins/sendmail/history.html'
-    permission = 'can_change_orders'
+    permission = 'can_view_orders'
     model = LogEntry
     context_object_name = 'logs'
     paginate_by = 5

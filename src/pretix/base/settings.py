@@ -276,7 +276,7 @@ Your {event} team"""))
         'default': LazyI18nString.from_gettext(ugettext_noop("""Hello,
 
 we successfully received your order for {event} with a total value
-of {total_with_currency}. Please complete your payment before {date}.
+of {total_with_currency}.
 
 {payment_info}
 
@@ -494,6 +494,10 @@ Your {event} team"""))
     'banner_message_detail': {
         'default': '',
         'type': LazyI18nString
+    },
+    'frontpage_subevent_ordering': {
+        'default': 'date_ascending',
+        'type': str
     },
 }
 

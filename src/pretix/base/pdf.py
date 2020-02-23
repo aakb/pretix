@@ -148,12 +148,12 @@ DEFAULT_VARIABLES = OrderedDict((
     ("invoice_name", {
         "label": _("Invoice address: name"),
         "editor_sample": _("John Doe"),
-        "evaluate": lambda op, order, ev: order.invoice_address.name if getattr(order, 'invoice_address') else ''
+        "evaluate": lambda op, order, ev: order.invoice_address.name if getattr(order, 'invoice_address', None) else ''
     }),
     ("invoice_company", {
         "label": _("Invoice address: company"),
         "editor_sample": _("Sample company"),
-        "evaluate": lambda op, order, ev: order.invoice_address.company if getattr(order, 'invoice_address') else ''
+        "evaluate": lambda op, order, ev: order.invoice_address.company if getattr(order, 'invoice_address', None) else ''
     }),
     ("addons", {
         "label": _("List of Add-Ons"),
@@ -211,16 +211,25 @@ class Renderer:
                 pdfmetrics.registerFont(TTFont(family + ' B I', finders.find(styles['bolditalic']['truetype'])))
 
     def _draw_barcodearea(self, canvas: Canvas, op: OrderPosition, o: dict):
+        content = o.get('content', 'secret')
+        if content == 'secret':
+            content = op.secret
+        elif content == 'pseudonymization_id':
+            content = op.pseudonymization_id
+
         reqs = float(o['size']) * mm
-        qrw = QrCodeWidget(op.secret, barLevel='H', barHeight=reqs, barWidth=reqs)
+        qrw = QrCodeWidget(content, barLevel='H', barHeight=reqs, barWidth=reqs)
         d = Drawing(reqs, reqs)
         d.add(qrw)
         qr_x = float(o['left']) * mm
         qr_y = float(o['bottom']) * mm
         renderPDF.draw(d, canvas, qr_x, qr_y)
 
+    def _get_ev(self, op, order):
+        return op.subevent or order.event
+
     def _get_text_content(self, op: OrderPosition, order: Order, o: dict):
-        ev = op.subevent or order.event
+        ev = self._get_ev(op, order)
         if not o['content']:
             return '(error)'
         if o['content'] == 'other':

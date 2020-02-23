@@ -78,6 +78,9 @@
                                 {{ position.custom_error }}
                             </div>
                         {% endif %}
+                        <p class="help-block">
+                            {% trans "Ticket secret:" %} {{ position.secret|slice:":12" }}…
+                        </p>
                         <div class="radio">
                             <label>
                                 <input name="{{ position.form.prefix }}-operation" type="radio" value=""
@@ -133,6 +136,13 @@
                         </div>
                         <div class="radio">
                             <label>
+                                <input name="{{ position.form.prefix }}-operation" type="radio" value="secret"
+                                        {% if position.form.operation.value == "secret" %}checked="checked"{% endif %}>
+                                {% trans "Generate a new secret" %}
+                            </label>
+                        </div>
+                        <div class="radio">
+                            <label>
                                 <input name="{{ position.form.prefix }}-operation" type="radio" value="cancel"
                                         {% if position.form.operation.value == "cancel" %}checked="checked"{% endif %}>
                                 {% trans "Remove from order" %}
@@ -150,7 +160,7 @@
         <div class="panel panel-default items">
             <div class="panel-heading">
                 <h3 class="panel-title">
-                    Add product
+                    {% trans "Add product" %}
                 </h3>
             </div>
             <div class="panel-body">
@@ -176,7 +186,7 @@
         <div class="panel panel-default items">
             <div class="panel-heading">
                 <h3 class="panel-title">
-                    Other operations
+                    {% trans "Other operations" %}
                 </h3>
             </div>
             <div class="panel-body">

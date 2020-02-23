@@ -6,26 +6,12 @@ with pretix' REST API, such as authentication, pagination and similar definition
 
 .. _`rest-auth`:
 
-Obtaining an API token
-----------------------
-
-To authenticate your API requests, you need to obtain an API token. You can create a
-token in the pretix web interface on the level of organizer teams. Create a new team
-or choose an existing team that has the level of permissions the token should have and
-create a new token using the form below the list of team members:
-
-.. image:: img/token_form.png
-   :class: screenshot
-
-You can enter a description for the token to distinguish from other tokens later on.
-Once you click "Add", you will be provided with an API token in the success message.
-Copy this token, as you won't be able to retrieve it again.
-
-.. image:: img/token_success.png
-   :class: screenshot
-
 Authentication
 --------------
+
+If you're building an application for end users, we strongly recommend that you use our
+:ref:`OAuth-based authentication progress <rest-oauth>`. However, for simpler needs, you
+can also go with static API tokens that you can create on a per-team basis (see below).
 
 You need to include the API token with every request to pretix' API in the ``Authorization`` header
 like the following:
@@ -43,6 +29,24 @@ like the following:
           third-party clients and might change or be removed at any time. We plan on
           adding OAuth2 support in the future for user-level authentication. If you want
           to use session authentication, be sure to comply with Django's `CSRF policies`_.
+
+Obtaining an API token
+----------------------
+
+To authenticate your API requests, you need to obtain an API token. You can create a
+token in the pretix web interface on the level of organizer teams. Create a new team
+or choose an existing team that has the level of permissions the token should have and
+create a new token using the form below the list of team members:
+
+.. image:: img/token_form.png
+    :class: screenshot
+
+You can enter a description for the token to distinguish from other tokens later on.
+Once you click "Add", you will be provided with an API token in the success message.
+Copy this token, as you won't be able to retrieve it again.
+
+.. image:: img/token_success.png
+    :class: screenshot
 
 Permissions
 -----------
@@ -108,6 +112,41 @@ respective page.
 
 The field ``results`` contains a list of objects representing the first results. For most
 objects, every page contains 50 results.
+
+Conditional fetching
+--------------------
+
+If you pull object lists from pretix' APIs regularly, we ask you to implement conditional fetching
+to avoid unnecessary data traffic. This is not supported on all resources and we currently implement
+two different mechanisms for different resources, which is necessary because we can only obtain best
+efficiency for resources that do not support deletion operations.
+
+Object-level conditional fetching
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The :ref:`rest-orders` resource list contains an HTTP header called ``X-Page-Generated`` containing the
+current time on the server in ISO 8601 format. On your next request, you can pass this header
+(as is, without any modifications necessary) as the ``modified_since`` query parameter and you will receive
+a list containing only objects that have changed in the time since your last request.
+
+List-level conditional fetching
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If modification checks are not possible with this granularity, you can instead check for the full list.
+In this case, the list of objects may contain a regular HTTP header ``Last-Modified`` with the date of the
+last modification to any item of that resource. You can then pass this date back in your next request in the
+``If-Modified-Since`` header. If the any object has changed in the meantime, you will receive back a full list
+(if something it missing, this means the object has been deleted). If nothing happened, we'll send back a
+``304 Not Modified`` return code.
+
+This is currently implemented on the following resources:
+
+* :ref:`rest-categories`
+* :ref:`rest-items`
+* :ref:`rest-questions`
+* :ref:`rest-quotas`
+* :ref:`rest-subevents`
+* :ref:`rest-taxrules`
 
 Errors
 ------

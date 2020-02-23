@@ -13,6 +13,7 @@ from django.http import FileResponse, Http404, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.formats import date_format
 from django.utils.functional import cached_property
+from django.utils.safestring import mark_safe
 from django.utils.timezone import now
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import (
@@ -31,8 +32,8 @@ from pretix.base.models.orders import OrderFee
 from pretix.base.models.tax import EU_COUNTRIES
 from pretix.base.services.export import export
 from pretix.base.services.invoices import (
-    generate_cancellation, generate_invoice, invoice_pdf, invoice_qualified,
-    regenerate_invoice,
+    generate_cancellation, generate_invoice, invoice_pdf, invoice_pdf_task,
+    invoice_qualified, regenerate_invoice,
 )
 from pretix.base.services.locking import LockTimeoutException
 from pretix.base.services.mail import SendMailException, render_mail
@@ -46,9 +47,9 @@ from pretix.base.views.async import AsyncAction
 from pretix.base.views.mixins import OrderQuestionsViewMixin
 from pretix.control.forms.filter import EventOrderFilterForm
 from pretix.control.forms.orders import (
-    CommentForm, ExporterForm, ExtendForm, OrderContactForm, OrderLocaleForm,
-    OrderMailForm, OrderPositionAddForm, OrderPositionChangeForm,
-    OtherOperationsForm,
+    CommentForm, ExporterForm, ExtendForm, MarkPaidForm, OrderContactForm,
+    OrderLocaleForm, OrderMailForm, OrderPositionAddForm,
+    OrderPositionChangeForm, OtherOperationsForm,
 )
 from pretix.control.permissions import EventPermissionRequiredMixin
 from pretix.control.views import PaginationMixin
@@ -134,7 +135,13 @@ class OrderDetail(OrderView):
         ctx = super().get_context_data(**kwargs)
         ctx['items'] = self.get_items()
         ctx['event'] = self.request.event
-        ctx['payment'] = self.payment_provider.order_control_render(self.request, self.object)
+        ctx['payment_provider'] = self.payment_provider
+        if self.payment_provider:
+            ctx['payment'] = self.payment_provider.order_control_render(self.request, self.object)
+        else:
+            ctx['payment'] = mark_safe('<div class="alert alert-danger">{}</div>'.format(
+                _('This order was paid using a payment provider plugin that is now disabled or uninstalled.')
+            ))
         ctx['invoices'] = list(self.order.invoices.all().select_related('event'))
         ctx['comment_form'] = CommentForm(initial={
             'comment': self.order.comment,
@@ -218,12 +225,24 @@ class OrderComment(OrderView):
 class OrderTransition(OrderView):
     permission = 'can_change_orders'
 
+    @cached_property
+    def mark_paid_form(self):
+        return MarkPaidForm(
+            instance=self.order,
+            data=self.request.POST if self.request.method == "POST" else None,
+        )
+
     def post(self, *args, **kwargs):
         to = self.request.POST.get('status', '')
         if self.order.status in (Order.STATUS_PENDING, Order.STATUS_EXPIRED) and to == 'p':
+            if not self.mark_paid_form.is_valid():
+                return render(self.request, 'pretixcontrol/order/pay.html', {
+                    'form': self.mark_paid_form,
+                    'order': self.order,
+                })
             try:
                 mark_order_paid(self.order, manual=True, user=self.request.user,
-                                count_waitinglist=False)
+                                count_waitinglist=False, force=self.mark_paid_form.cleaned_data.get('force', False))
             except Quota.QuotaExceededException as e:
                 messages.error(self.request, str(e))
             except SendMailException:
@@ -243,18 +262,30 @@ class OrderTransition(OrderView):
             mark_order_expired(self.order, user=self.request.user)
             messages.success(self.request, _('The order has been marked as expired.'))
         elif self.order.status == Order.STATUS_PAID and to == 'r':
-            ret = self.payment_provider.order_control_refund_perform(self.request, self.order)
-            if ret:
-                return redirect(ret)
+            if not self.payment_provider:
+                messages.error(self.request, _('This order is not assigned to a known payment provider.'))
+            else:
+                ret = self.payment_provider.order_control_refund_perform(self.request, self.order)
+                if ret:
+                    return redirect(ret)
         return redirect(self.get_order_url())
 
     def get(self, *args, **kwargs):
         to = self.request.GET.get('status', '')
-        if self.order.cancel_allowed() and to == 'c':
+        if self.order.status in (Order.STATUS_PENDING, Order.STATUS_EXPIRED) and to == 'p':
+            return render(self.request, 'pretixcontrol/order/pay.html', {
+                'form': self.mark_paid_form,
+                'order': self.order,
+            })
+        elif self.order.cancel_allowed() and to == 'c':
             return render(self.request, 'pretixcontrol/order/cancel.html', {
                 'order': self.order,
             })
         elif self.order.status == Order.STATUS_PAID and to == 'r':
+            if not self.payment_provider:
+                messages.error(self.request, _('This order is not assigned to a known payment provider.'))
+                return redirect(self.get_order_url())
+
             try:
                 cr = self.payment_provider.order_control_refund_render(self.order, self.request)
             except TypeError:
@@ -461,7 +492,12 @@ class InvoiceDownload(EventPermissionRequiredMixin, View):
                                         'now. Please try again in a few seconds.'))
             return redirect(self.get_order_url())
 
-        resp = FileResponse(self.invoice.file.file, content_type='application/pdf')
+        try:
+            resp = FileResponse(self.invoice.file.file, content_type='application/pdf')
+        except FileNotFoundError:
+            invoice_pdf_task.apply(args=(self.invoice.pk,))
+            return self.get(request, *args, **kwargs)
+
         resp['Content-Disposition'] = 'attachment; filename="{}.pdf"'.format(self.invoice.number)
         return resp
 
@@ -562,6 +598,8 @@ class OrderChange(OrderView):
             return True
 
     def _process_add(self, ocm):
+        if 'add-do' not in self.request.POST:
+            return True
         if not self.add_form.is_valid():
             return False
         else:
@@ -612,6 +650,8 @@ class OrderChange(OrderView):
                     ocm.cancel(p)
                 elif p.form.cleaned_data['operation'] == 'split':
                     ocm.split(p)
+                elif p.form.cleaned_data['operation'] == 'secret':
+                    ocm.regenerate_secret(p)
 
             except OrderError as e:
                 p.custom_error = str(e)

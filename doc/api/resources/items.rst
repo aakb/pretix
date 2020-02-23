@@ -1,3 +1,5 @@
+.. _rest-items:
+
 Items
 =====
 
@@ -55,11 +57,14 @@ max_per_order                         integer                    This product ca
 checkin_attention                     boolean                    If ``True``, the check-in app should show a warning
                                                                  that this ticket requires special attention if such
                                                                  a product is being scanned.
+original_price                        money (string)             An original price, shown for comparison, not used
+                                                                 for price calculations.
 has_variations                        boolean                    Shows whether or not this item has variations.
 variations                            list of objects            A list with one object for each variation of this item.
                                                                  Can be empty. Only writable during creation,
                                                                  use separate endpoint to modify this later.
 ├ id                                  integer                    Internal ID of the variation
+├ value                               multi-lingual string       The "name" of the variation
 ├ default_price                       money (string)             The price set directly for this variation or ``null``
 ├ price                               money (string)             The price used for this variation. This is either the
                                                                  same as ``default_price`` if that value is set or equal
@@ -91,7 +96,7 @@ addons                                list of objects            Definition of a
 
 .. versionchanged:: 1.16
 
-   The field ``internal_name`` has been added.
+   The field ``internal_name`` and ``original_price`` fields have been added.
 
 Notes
 -----
@@ -136,6 +141,7 @@ Endpoints
             "name": {"en": "Standard ticket"},
             "internal_name": "",
             "default_price": "23.00",
+            "original_price": null,
             "category": null,
             "active": true,
             "description": null,
@@ -219,6 +225,7 @@ Endpoints
         "name": {"en": "Standard ticket"},
         "internal_name": "",
         "default_price": "23.00",
+        "original_price": null,
         "category": null,
         "active": true,
         "description": null,
@@ -283,6 +290,7 @@ Endpoints
         "name": {"en": "Standard ticket"},
         "internal_name": "",
         "default_price": "23.00",
+        "original_price": null,
         "category": null,
         "active": true,
         "description": null,
@@ -334,6 +342,7 @@ Endpoints
         "name": {"en": "Standard ticket"},
         "internal_name": "",
         "default_price": "23.00",
+        "original_price": null,
         "category": null,
         "active": true,
         "description": null,
@@ -417,6 +426,7 @@ Endpoints
         "name": {"en": "Ticket"},
         "internal_name": "",
         "default_price": "25.00",
+        "original_price": null,
         "category": null,
         "active": true,
         "description": null,

@@ -38,10 +38,12 @@ gunicorn
 hardcoded
 hostname
 idempotency
+incrementing
 inofficial
 invalidations
 iterable
 Jimdo
+libpretixprint
 libsass
 linters
 memcached
@@ -77,6 +79,7 @@ prometheus
 proxied
 proxying
 pseudonymize
+pseudonymization
 queryset
 redemptions
 redis

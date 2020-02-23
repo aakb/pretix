@@ -41,6 +41,7 @@ class LogEntry(models.Model):
     datetime = models.DateTimeField(auto_now_add=True, db_index=True)
     user = models.ForeignKey('User', null=True, blank=True, on_delete=models.PROTECT)
     api_token = models.ForeignKey('TeamAPIToken', null=True, blank=True, on_delete=models.PROTECT)
+    oauth_application = models.ForeignKey('pretixapi.OAuthApplication', null=True, blank=True, on_delete=models.PROTECT)
     event = models.ForeignKey('Event', null=True, blank=True, on_delete=models.SET_NULL)
     action_type = models.CharField(max_length=255)
     data = models.TextField(default='{}')
@@ -65,10 +66,13 @@ class LogEntry(models.Model):
     def display_object(self):
         from . import Order, Voucher, Quota, Item, ItemCategory, Question, Event, TaxRule, SubEvent
 
-        if self.content_type.model_class() is Event:
-            return ''
+        try:
+            if self.content_type.model_class() is Event:
+                return ''
 
-        co = self.content_object
+            co = self.content_object
+        except:
+            return ''
         a_map = None
         a_text = None
 

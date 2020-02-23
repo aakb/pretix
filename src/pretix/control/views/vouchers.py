@@ -10,6 +10,7 @@ from django.http import (
     Http404, HttpResponse, HttpResponseBadRequest, HttpResponseRedirect,
     JsonResponse,
 )
+from django.shortcuts import redirect
 from django.utils.functional import cached_property
 from django.utils.translation import ugettext_lazy as _
 from django.views.generic import (
@@ -65,9 +66,9 @@ class VoucherList(PaginationMixin, EventPermissionRequiredMixin, ListView):
         for v in self.get_queryset():
             if v.item:
                 if v.variation:
-                    prod = '%s – %s' % (str(v.item.name), str(v.variation.name))
+                    prod = '%s – %s' % (str(v.item), str(v.variation))
                 else:
-                    prod = '%s' % str(v.item.name)
+                    prod = '%s' % str(v.item)
             elif v.quota:
                 prod = _('Any product in quota "{quota}"').format(quota=str(v.quota.name))
             row = [
@@ -223,6 +224,23 @@ class VoucherCreate(EventPermissionRequiredMixin, CreateView):
         # TODO: Transform this into an asynchronous call?
         with request.event.lock():
             return super().post(request, *args, **kwargs)
+
+
+class VoucherGo(EventPermissionRequiredMixin, View):
+    permission = 'can_view_vouchers'
+
+    def get_voucher(self, code):
+        return Voucher.objects.get(code__iexact=code, event=self.request.event)
+
+    def get(self, request, *args, **kwargs):
+        code = request.GET.get("code", "").strip()
+        try:
+            voucher = self.get_voucher(code)
+            return redirect('control:event.voucher', event=request.event.slug, organizer=request.event.organizer.slug,
+                            voucher=voucher.id)
+        except Voucher.DoesNotExist:
+            messages.error(request, _('There is no voucher with the given voucher code.'))
+            return redirect('control:event.vouchers', event=request.event.slug, organizer=request.event.organizer.slug)
 
 
 class VoucherBulkCreate(EventPermissionRequiredMixin, CreateView):

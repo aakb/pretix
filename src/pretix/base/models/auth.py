@@ -25,13 +25,13 @@ class UserManager(BaseUserManager):
     model documentation to see what's so special about our user model.
     """
 
-    def create_user(self, email: str, password: str=None, **kwargs):
+    def create_user(self, email: str, password: str = None, **kwargs):
         user = self.model(email=email, **kwargs)
         user.set_password(password)
         user.save()
         return user
 
-    def create_superuser(self, email: str, password: str=None):  # NOQA
+    def create_superuser(self, email: str, password: str = None):  # NOQA
         # Not used in the software but required by Django
         if password is None:
             raise Exception("You must provide a password")
@@ -93,7 +93,7 @@ class User(AbstractBaseUser, PermissionsMixin, LoggingMixin):
                                 verbose_name=_('Timezone'))
     require_2fa = models.BooleanField(
         default=False,
-        verbose_name=_('Two-factor authentification is required to log in')
+        verbose_name=_('Two-factor authentication is required to log in')
     )
     notifications_send = models.BooleanField(
         default=True,

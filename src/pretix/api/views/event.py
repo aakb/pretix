@@ -9,9 +9,9 @@ from pretix.api.serializers.event import (
     CloneEventSerializer, EventSerializer, SubEventSerializer,
     TaxRuleSerializer,
 )
+from pretix.api.views import ConditionalListView
 from pretix.base.models import Event, ItemCategory, TaxRule
 from pretix.base.models.event import SubEvent
-from pretix.base.models.organizer import TeamAPIToken
 from pretix.helpers.dicts import merge_dicts
 
 
@@ -38,7 +38,7 @@ class EventViewSet(viewsets.ModelViewSet):
             serializer.instance.log_action(
                 log_action,
                 user=self.request.user,
-                api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+                auth=self.request.auth,
                 data=self.request.data
             )
 
@@ -51,7 +51,7 @@ class EventViewSet(viewsets.ModelViewSet):
                 serializer.instance.log_action(
                     'pretix.event.plugins.' + action,
                     user=self.request.user,
-                    api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+                    auth=self.request.auth,
                     data={'plugin': module}
                 )
 
@@ -60,7 +60,7 @@ class EventViewSet(viewsets.ModelViewSet):
             serializer.instance.log_action(
                 'pretix.event.changed',
                 user=self.request.user,
-                api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+                auth=self.request.auth,
                 data=self.request.data
             )
 
@@ -69,7 +69,7 @@ class EventViewSet(viewsets.ModelViewSet):
         serializer.instance.log_action(
             'pretix.event.added',
             user=self.request.user,
-            api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+            auth=self.request.auth,
             data=self.request.data
         )
 
@@ -114,7 +114,7 @@ class CloneEventViewSet(viewsets.ModelViewSet):
         serializer.instance.log_action(
             'pretix.event.added',
             user=self.request.user,
-            api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+            auth=self.request.auth,
             data=self.request.data
         )
 
@@ -125,7 +125,7 @@ class SubEventFilter(FilterSet):
         fields = ['active']
 
 
-class SubEventViewSet(viewsets.ReadOnlyModelViewSet):
+class SubEventViewSet(ConditionalListView, viewsets.ReadOnlyModelViewSet):
     serializer_class = SubEventSerializer
     queryset = ItemCategory.objects.none()
     filter_backends = (DjangoFilterBackend, filters.OrderingFilter)
@@ -137,7 +137,7 @@ class SubEventViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
 
-class TaxRuleViewSet(viewsets.ModelViewSet):
+class TaxRuleViewSet(ConditionalListView, viewsets.ModelViewSet):
     serializer_class = TaxRuleSerializer
     queryset = TaxRule.objects.none()
     write_permission = 'can_change_event_settings'
@@ -150,7 +150,7 @@ class TaxRuleViewSet(viewsets.ModelViewSet):
         serializer.instance.log_action(
             'pretix.event.taxrule.changed',
             user=self.request.user,
-            api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+            auth=self.request.auth,
             data=self.request.data
         )
 
@@ -159,7 +159,7 @@ class TaxRuleViewSet(viewsets.ModelViewSet):
         serializer.instance.log_action(
             'pretix.event.taxrule.added',
             user=self.request.user,
-            api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+            auth=self.request.auth,
             data=self.request.data
         )
 
@@ -170,6 +170,6 @@ class TaxRuleViewSet(viewsets.ModelViewSet):
         instance.log_action(
             'pretix.event.taxrule.deleted',
             user=self.request.user,
-            api_token=(self.request.auth if isinstance(self.request.auth, TeamAPIToken) else None),
+            auth=self.request.auth,
         )
         super().perform_destroy(instance)

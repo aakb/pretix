@@ -1,4 +1,10 @@
-.. spelling:: checkins
+.. spelling::
+
+   checkins
+   pdf
+
+
+.. _rest-orders:
 
 Orders
 ======
@@ -100,6 +106,7 @@ last_modified                         datetime                   Last modificati
 .. versionchanged:: 1.16
 
    The attributes ``order.last_modified`` as well as the corresponding filters to the resource have been added.
+   An endpoint for order creation as well as ``…/mark_refunded/`` has been added.
 
 .. _order-position-resource:
 
@@ -112,7 +119,7 @@ Order position resource
 Field                                 Type                       Description
 ===================================== ========================== =======================================================
 id                                    integer                    Internal ID of the order position
-code                                  string                     Order code of the order the position belongs to
+order                                 string                     Order code of the order the position belongs to
 positionid                            integer                    Number of the position within the order
 item                                  integer                    ID of the purchased item
 variation                             integer                    ID of the purchased variation (or ``null``)
@@ -126,6 +133,7 @@ tax_rule                              integer                    The ID of the u
 secret                                string                     Secret code printed on the tickets for validation
 addon_to                              integer                    Internal ID of the position this position is an add-on for (or ``null``)
 subevent                              integer                    ID of the date inside an event series this position belongs to (or ``null``).
+pseudonymization_id                   string                     A random ID, e.g. for use in lead scanning apps
 checkins                              list of objects            List of check-ins with this ticket
 ├ list                                integer                    Internal ID of the check-in list
 └ datetime                            datetime                   Time of check-in
@@ -138,6 +146,9 @@ answers                               list of objects            Answers to user
 ├ question_identifier                 string                     The question's ``identifier`` field
 ├ options                             list of integers           Internal IDs of selected option(s)s (only for choice types)
 └ option_identifiers                  list of strings            The ``identifier`` fields of the selected option(s)s
+pdf_data                              object                     Data object required for ticket PDF generation. By default,
+                                                                 this field is missing. It will be added only if you add the
+                                                                 ``pdf_data=true`` query parameter to your request.
 ===================================== ========================== =======================================================
 
 .. versionchanged:: 1.7
@@ -151,6 +162,10 @@ answers                               list of objects            Answers to user
 .. versionchanged:: 1.14
 
   The attributes ``answers.question_identifier`` and ``answers.option_identifiers`` have been added.
+
+.. versionchanged:: 1.16
+
+  The attributes ``pseudonymization_id`` and ``pdf_data`` have been added.
 
 
 Order endpoints
@@ -231,6 +246,7 @@ Order endpoints
                 "secret": "z3fsn8jyufm5kpk768q69gkbyr5f4h6w",
                 "addon_to": null,
                 "subevent": null,
+                "pseudonymization_id": "MQLJvANO3B",
                 "checkins": [
                   {
                     "list": 44,
@@ -345,6 +361,7 @@ Order endpoints
             "secret": "z3fsn8jyufm5kpk768q69gkbyr5f4h6w",
             "addon_to": null,
             "subevent": null,
+            "pseudonymization_id": "MQLJvANO3B",
             "checkins": [
               {
                 "list": 44,
@@ -424,6 +441,182 @@ Order endpoints
    :statuscode 404: The requested order or output provider does not exist.
    :statuscode 409: The file is not yet ready and will now be prepared. Retry the request after waiting for a few
                           seconds.
+
+.. http:post:: /api/v1/organizers/(organizer)/events/(event)/orders/
+
+   Creates a new order.
+
+   .. warning:: This endpoint is considered **experimental**. It might change at any time without prior notice.
+
+   .. warning::
+
+       This endpoint is intended for advanced users. It is not designed to be used to build your own shop frontend,
+       it's rather intended to import attendees from external sources etc.
+       There is a lot that it does not or can not do, and you will need to be careful using it.
+       It allows to bypass many of the restrictions imposed when creating an order through the
+       regular shop.
+
+       Specifically, this endpoint currently
+
+       * does not validate if products are only to be sold in a specific time frame
+
+       * does not validate if the event's ticket sales are already over or haven't started
+
+       * does not validate the number of items per order or the number of times an item can be included in an order
+
+       * does not validate any requirements related to add-on products
+
+       * does not check or calculate prices but believes any prices you send
+
+       * does not support the redemption of vouchers
+
+       * does not prevent you from buying items that can only be bought with a voucher
+
+       * does not calculate fees
+
+       * does not allow to pass data to plugins and will therefore cause issues with some plugins like the shipping
+         module
+
+       * does not send order confirmations via email
+
+       * does not support reverse charge taxation
+
+       * does not support file upload questions
+
+   You can supply the following fields of the resource:
+
+   * ``code`` (optional)
+   * ``status`` (optional) – Defaults to pending for non-free orders and paid for free orders. You can only set this to
+     ``"n"`` for pending or ``"p"`` for paid. If you create a paid order, the ``order_paid`` signal will **not** be
+     sent out to plugins and no email will be sent. If you want that behavior, create an unpaid order and then call
+     the ``mark_paid`` API method.
+   * ``consume_carts`` (optional) – A list of cart IDs. All cart positions with these IDs will be deleted if the
+     order creation is successful. Any quotas that become free by this operation will be credited to your order
+     creation.
+   * ``email``
+   * ``locale``
+   * ``payment_provider`` – The identifier of the payment provider set for this order. This needs to be an existing
+     payment provider. You should use ``"free"`` for free orders.
+   * ``payment_info`` (optional) – You can pass a nested JSON object that will be set as the internal ``payment_info``
+     value of the order. How this value is handled is up to the payment provider and you should only use this if you
+     know the specific payment provider in detail. Please keep in mind that the payment provider will not be called
+     to do anything about this (i.e. if you pass a bank account to a debit provider, *no* charge will be created),
+     this is just informative in case you *handled the payment already*.
+   * ``comment`` (optional)
+   * ``checkin_attention`` (optional)
+   * ``invoice_address`` (optional)
+
+      * ``company``
+      * ``is_business``
+      * ``name``
+      * ``street``
+      * ``zipcode``
+      * ``city``
+      * ``country``
+      * ``internal_reference``
+      * ``vat_id``
+
+   * ``positions``
+
+      * ``positionid`` (optional, see below)
+      * ``item``
+      * ``variation``
+      * ``price``
+      * ``attendee_name``
+      * ``attendee_email``
+      * ``secret`` (optional)
+      * ``addon_to`` (optional, see below)
+      * ``subevent``
+      * ``answers``
+
+        * ``question``
+        * ``answer``
+        * ``options``
+
+   * ``fees``
+
+      * ``fee_type``
+      * ``value``
+      * ``description``
+      * ``internal_type``
+      * ``tax_rule``
+
+   If you want to use add-on products, you need to set the ``positionid`` fields of all positions manually
+   to incrementing integers starting with ``1``. Then, you can reference one of these
+   IDs in the ``addon_to`` field of another position. Note that all add_ons for a specific position need to come
+   immediately after the position itself.
+
+   **Example request**:
+
+   .. sourcecode:: http
+
+      POST /api/v1/organizers/bigevents/events/sampleconf/orders/ HTTP/1.1
+      Host: pretix.eu
+      Accept: application/json, text/javascript
+      Content: application/json
+
+      {
+        "email": "dummy@example.org",
+        "locale": "en",
+        "fees": [
+          {
+            "fee_type": "payment",
+            "value": "0.25",
+            "description": "",
+            "internal_type": "",
+            "tax_rule": 2
+          }
+        ],
+        "payment_provider": "banktransfer",
+        "invoice_address": {
+          "is_business": False,
+          "company": "Sample company",
+          "name": "John Doe",
+          "street": "Sesam Street 12",
+          "zipcode": "12345",
+          "city": "Sample City",
+          "country": "UK",
+          "internal_reference": "",
+          "vat_id": ""
+        },
+        "positions": [
+          {
+            "positionid": 1,
+            "item": 1,
+            "variation": null,
+            "price": "23.00",
+            "attendee_name": "Peter",
+            "attendee_email": null,
+            "addon_to": null,
+            "answers": [
+              {
+                "question": 1,
+                "answer": "23",
+                "options": []
+              }
+            ],
+            "subevent": null
+          }
+        ],
+      }
+
+   **Example response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 201 Created
+      Vary: Accept
+      Content-Type: application/json
+
+      (Full order resource, see above.)
+
+   :param organizer: The ``slug`` field of the organizer of the event to create an item for
+   :param event: The ``slug`` field of the event to create an item for
+   :statuscode 201: no error
+   :statuscode 400: The item could not be created due to invalid submitted data or lack of quota.
+   :statuscode 401: Authentication failure
+   :statuscode 403: The requested organizer/event does not exist **or** you have no permission to create this
+         order.
 
 .. http:post:: /api/v1/organizers/(organizer)/events/(event)/orders/(code)/mark_paid/
 
@@ -532,6 +725,44 @@ Order endpoints
    :param code: The ``code`` field of the order to modify
    :statuscode 200: no error
    :statuscode 400: The order cannot be marked as unpaid since the current order status does not allow it.
+   :statuscode 401: Authentication failure
+   :statuscode 403: The requested organizer/event does not exist **or** you have no permission to view this resource.
+   :statuscode 404: The requested order does not exist.
+
+.. http:post:: /api/v1/organizers/(organizer)/events/(event)/orders/(code)/mark_refunded/
+
+   Marks a paid order as refunded.
+
+   .. warning:: In the current implementation, this will **bypass** the payment provider, i.e. the money will **not** be
+                transferred back to the user automatically, the order will only be *marked* as refunded within pretix.
+
+   **Example request**:
+
+   .. sourcecode:: http
+
+      POST /api/v1/organizers/bigevents/events/sampleconf/orders/ABC12/mark_expired/ HTTP/1.1
+      Host: pretix.eu
+      Accept: application/json, text/javascript
+
+   **Example response**:
+
+   .. sourcecode:: http
+
+      HTTP/1.1 200 OK
+      Vary: Accept
+      Content-Type: application/json
+
+      {
+        "code": "ABC12",
+        "status": "r",
+        ...
+      }
+
+   :param organizer: The ``slug`` field of the organizer to modify
+   :param event: The ``slug`` field of the event to modify
+   :param code: The ``code`` field of the order to modify
+   :statuscode 200: no error
+   :statuscode 400: The order cannot be marked as expired since the current order status does not allow it.
    :statuscode 401: Authentication failure
    :statuscode 403: The requested organizer/event does not exist **or** you have no permission to view this resource.
    :statuscode 404: The requested order does not exist.
@@ -670,6 +901,7 @@ Order position endpoints
             "tax_rule": null,
             "tax_value": "0.00",
             "secret": "z3fsn8jyufm5kpk768q69gkbyr5f4h6w",
+            "pseudonymization_id": "MQLJvANO3B",
             "addon_to": null,
             "subevent": null,
             "checkins": [
@@ -762,6 +994,7 @@ Order position endpoints
         "secret": "z3fsn8jyufm5kpk768q69gkbyr5f4h6w",
         "addon_to": null,
         "subevent": null,
+        "pseudonymization_id": "MQLJvANO3B",
         "checkins": [
           {
             "list": 44,

@@ -13,9 +13,10 @@ from django.db import transaction
 from django.db.models import F, Max, Q, Sum
 from django.dispatch import receiver
 from django.utils.formats import date_format
-from django.utils.timezone import make_aware, now
+from django.utils.timezone import now
 from django.utils.translation import ugettext as _
 
+from pretix.api.models import OAuthApplication
 from pretix.base.i18n import (
     LazyCurrencyNumber, LazyDate, LazyLocaleException, LazyNumber, language,
 )
@@ -31,7 +32,6 @@ from pretix.base.models.orders import (
 from pretix.base.models.organizer import TeamAPIToken
 from pretix.base.models.tax import TaxedPrice
 from pretix.base.payment import BasePaymentProvider
-from pretix.base.reldate import RelativeDateWrapper
 from pretix.base.services.async import ProfiledTask
 from pretix.base.services.invoices import (
     generate_cancellation, generate_invoice, invoice_qualified,
@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 
 def mark_order_paid(order: Order, provider: str=None, info: str=None, date: datetime=None, manual: bool=None,
                     force: bool=False, send_mail: bool=True, user: User=None, mail_text='',
-                    count_waitinglist=True, api_token=None) -> Order:
+                    count_waitinglist=True, auth=None) -> Order:
     """
     Marks an order as paid. This sets the payment provider, info and date and returns
     the order object.
@@ -124,7 +124,7 @@ def mark_order_paid(order: Order, provider: str=None, info: str=None, date: date
         'date': date or now_dt,
         'manual': manual,
         'force': force
-    }, user=user, api_token=api_token)
+    }, user=user, auth=auth)
     order_paid.send(order.event, order=order)
 
     invoice = None
@@ -174,7 +174,7 @@ def mark_order_paid(order: Order, provider: str=None, info: str=None, date: date
     return order
 
 
-def extend_order(order: Order, new_date: datetime, force: bool=False, user: User=None, api_token=None):
+def extend_order(order: Order, new_date: datetime, force: bool=False, user: User=None, auth=None):
     """
     Extends the deadline of an order. If the order is already expired, the quota will be checked to
     see if this is actually still possible. If ``force`` is set to ``True``, the result of this check
@@ -188,7 +188,7 @@ def extend_order(order: Order, new_date: datetime, force: bool=False, user: User
         order.log_action(
             'pretix.event.order.expirychanged',
             user=user,
-            api_token=api_token,
+            auth=auth,
             data={
                 'expires': order.expires,
                 'state_change': False
@@ -204,7 +204,7 @@ def extend_order(order: Order, new_date: datetime, force: bool=False, user: User
                 order.log_action(
                     'pretix.event.order.expirychanged',
                     user=user,
-                    api_token=api_token,
+                    auth=auth,
                     data={
                         'expires': order.expires,
                         'state_change': True
@@ -215,7 +215,7 @@ def extend_order(order: Order, new_date: datetime, force: bool=False, user: User
 
 
 @transaction.atomic
-def mark_order_refunded(order, user=None):
+def mark_order_refunded(order, user=None, api_token=None):
     """
     Mark this order as refunded. This sets the payment status and returns the order object.
     :param order: The order to change
@@ -229,7 +229,7 @@ def mark_order_refunded(order, user=None):
         order.status = Order.STATUS_REFUNDED
         order.save()
 
-    order.log_action('pretix.event.order.refunded', user=user)
+    order.log_action('pretix.event.order.refunded', user=user, api_token=api_token)
     i = order.invoices.filter(is_cancellation=False).last()
     if i:
         generate_cancellation(i)
@@ -238,24 +238,21 @@ def mark_order_refunded(order, user=None):
 
 
 @transaction.atomic
-def mark_order_expired(order, user=None, api_token=None):
+def mark_order_expired(order, user=None, auth=None):
     """
     Mark this order as expired. This sets the payment status and returns the order object.
     :param order: The order to change
     :param user: The user that performed the change
-    :param api_token: The API token used to performed the change
     """
     if isinstance(order, int):
         order = Order.objects.get(pk=order)
     if isinstance(user, int):
         user = User.objects.get(pk=user)
-    if isinstance(api_token, int):
-        api_token = TeamAPIToken.objects.get(pk=api_token)
     with order.event.lock():
         order.status = Order.STATUS_EXPIRED
         order.save()
 
-    order.log_action('pretix.event.order.expired', user=user, api_token=api_token)
+    order.log_action('pretix.event.order.expired', user=user, auth=auth)
     i = order.invoices.filter(is_cancellation=False).last()
     if i:
         generate_cancellation(i)
@@ -264,7 +261,7 @@ def mark_order_expired(order, user=None, api_token=None):
 
 
 @transaction.atomic
-def _cancel_order(order, user=None, send_mail: bool=True, api_token=None):
+def _cancel_order(order, user=None, send_mail: bool=True, api_token=None, oauth_application=None):
     """
     Mark this order as canceled
     :param order: The order to change
@@ -276,13 +273,15 @@ def _cancel_order(order, user=None, send_mail: bool=True, api_token=None):
         user = User.objects.get(pk=user)
     if isinstance(api_token, int):
         api_token = TeamAPIToken.objects.get(pk=api_token)
+    if isinstance(oauth_application, int):
+        oauth_application = OAuthApplication.objects.get(pk=oauth_application)
     with order.event.lock():
         if not order.cancel_allowed():
             raise OrderError(_('You cannot cancel this order.'))
         order.status = Order.STATUS_CANCELED
         order.save()
 
-    order.log_action('pretix.event.order.canceled', user=user, api_token=api_token)
+    order.log_action('pretix.event.order.canceled', user=user, auth=api_token or oauth_application)
     i = order.invoices.filter(is_cancellation=False).last()
     if i:
         generate_cancellation(i)
@@ -301,8 +300,8 @@ def _cancel_order(order, user=None, send_mail: bool=True, api_token=None):
                 'secret': order.secret
             })
         }
-        email_subject = _('Order canceled: %(code)s') % {'code': order.code}
         with language(order.locale):
+            email_subject = _('Order canceled: %(code)s') % {'code': order.code}
             try:
                 order.send_mail(
                     email_subject, email_template, email_context,
@@ -448,50 +447,22 @@ def _get_fees(positions: List[CartPosition], payment_provider: BasePaymentProvid
 def _create_order(event: Event, email: str, positions: List[CartPosition], now_dt: datetime,
                   payment_provider: BasePaymentProvider, locale: str=None, address: InvoiceAddress=None,
                   meta_info: dict=None):
-    from datetime import time
-
     fees = _get_fees(positions, payment_provider, address, meta_info, event)
     total = sum([c.price for c in positions]) + sum([c.value for c in fees])
 
-    tz = pytz.timezone(event.settings.timezone)
-    exp_by_date = now_dt.astimezone(tz) + timedelta(days=event.settings.get('payment_term_days', as_type=int))
-    exp_by_date = exp_by_date.astimezone(tz).replace(hour=23, minute=59, second=59, microsecond=0)
-    if event.settings.get('payment_term_weekdays'):
-        if exp_by_date.weekday() == 5:
-            exp_by_date += timedelta(days=2)
-        elif exp_by_date.weekday() == 6:
-            exp_by_date += timedelta(days=1)
-
-    expires = exp_by_date
-
-    term_last = event.settings.get('payment_term_last', as_type=RelativeDateWrapper)
-    if term_last:
-        if event.has_subevents:
-            term_last = min([
-                term_last.datetime(se).date()
-                for se in event.subevents.filter(id__in=[p.subevent_id for p in positions])
-            ])
-        else:
-            term_last = term_last.datetime(event).date()
-        term_last = make_aware(datetime.combine(
-            term_last,
-            time(hour=23, minute=59, second=59)
-        ), tz)
-        if term_last < expires:
-            expires = term_last
-
     with transaction.atomic():
-        order = Order.objects.create(
+        order = Order(
             status=Order.STATUS_PENDING,
             event=event,
             email=email,
             datetime=now_dt,
-            expires=expires,
             locale=locale,
             total=total,
             payment_provider=payment_provider.identifier,
             meta_info=json.dumps(meta_info or {}),
         )
+        order.set_expires(now_dt, event.subevents.filter(id__in=[p.subevent_id for p in positions]))
+        order.save()
 
         if address:
             if address.order is not None:
@@ -675,24 +646,25 @@ def send_download_reminders(sender, **kwargs):
             if not all([r for rr, r in allow_ticket_download.send(e, order=o)]):
                 continue
 
-            o.download_reminder_sent = True
-            o.save()
-            email_template = e.settings.mail_text_download_reminder
-            email_context = {
-                'event': o.event.name,
-                'url': build_absolute_uri(o.event, 'presale:event.order', kwargs={
-                    'order': o.code,
-                    'secret': o.secret
-                }),
-            }
-            email_subject = _('Your ticket is ready for download: %(code)s') % {'code': o.code}
-            try:
-                o.send_mail(
-                    email_subject, email_template, email_context,
-                    'pretix.event.order.email.download_reminder_sent'
-                )
-            except SendMailException:
-                logger.exception('Reminder email could not be sent')
+            with language(o.locale):
+                o.download_reminder_sent = True
+                o.save()
+                email_template = e.settings.mail_text_download_reminder
+                email_context = {
+                    'event': o.event.name,
+                    'url': build_absolute_uri(o.event, 'presale:event.order', kwargs={
+                        'order': o.code,
+                        'secret': o.secret
+                    }),
+                }
+                email_subject = _('Your ticket is ready for download: %(code)s') % {'code': o.code}
+                try:
+                    o.send_mail(
+                        email_subject, email_template, email_context,
+                        'pretix.event.order.email.download_reminder_sent'
+                    )
+                except SendMailException:
+                    logger.exception('Reminder email could not be sent')
 
 
 class OrderChangeManager:
@@ -708,7 +680,7 @@ class OrderChangeManager:
                                    'no quota is available.'),
         'paid_price_change': _('Currently, paid orders can only be changed in a way that does not change the total '
                                'price of the order as partial payments or refunds are not yet supported.'),
-        'addon_to_required': _('This is an addon product, please select the base position it should be added to.'),
+        'addon_to_required': _('This is an add-on product, please select the base position it should be added to.'),
         'addon_invalid': _('The selected base position does not allow you to add this product as an add-on.'),
         'subevent_required': _('You need to choose a subevent for the new position.'),
     }
@@ -718,6 +690,7 @@ class OrderChangeManager:
     CancelOperation = namedtuple('CancelOperation', ('position',))
     AddOperation = namedtuple('AddOperation', ('item', 'variation', 'price', 'addon_to', 'subevent'))
     SplitOperation = namedtuple('SplitOperation', ('position',))
+    RegenerateSecretOperation = namedtuple('RegenerateSecretOperation', ('position',))
 
     def __init__(self, order: Order, user, notify=True):
         self.order = order
@@ -772,6 +745,9 @@ class OrderChangeManager:
         self._quotadiff.update(new_quotas)
         self._quotadiff.subtract(position.quotas)
         self._operations.append(self.SubeventOperation(position, subevent, price))
+
+    def regenerate_secret(self, position: OrderPosition):
+        self._operations.append(self.RegenerateSecretOperation(position))
 
     def change_price(self, position: OrderPosition, price: Decimal):
         price = position.item.tax(price)
@@ -979,6 +955,15 @@ class OrderChangeManager:
                 })
             elif isinstance(op, self.SplitOperation):
                 split_positions.append(op.position)
+            elif isinstance(op, self.RegenerateSecretOperation):
+                op.position.secret = generate_position_secret()
+                op.position.save()
+                CachedTicket.objects.filter(order_position__order=self.order).delete()
+                CachedCombinedTicket.objects.filter(order=self.order).delete()
+                self.order.log_action('pretix.event.order.changed.secret', user=self.user, data={
+                    'position': op.position.pk,
+                    'positionid': op.position.positionid,
+                })
 
         if split_positions:
             self.split_order = self._create_split_order(split_positions)
@@ -1179,10 +1164,10 @@ def perform_order(self, event: str, payment_provider: str, positions: List[str],
 
 
 @app.task(base=ProfiledTask, bind=True, max_retries=5, default_retry_delay=1, throws=(OrderError,))
-def cancel_order(self, order: int, user: int=None, send_mail: bool=True, api_token=None):
+def cancel_order(self, order: int, user: int=None, send_mail: bool=True, api_token=None, oauth_application=None):
     try:
         try:
-            return _cancel_order(order, user, send_mail, api_token)
+            return _cancel_order(order, user, send_mail, api_token, oauth_application)
         except LockTimeoutException:
             self.retry()
     except (MaxRetriesExceededError, LockTimeoutException):
